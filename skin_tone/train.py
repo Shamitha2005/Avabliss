@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from dataset_loader import FaceSegmentationDataset
 from segmentation import HybridFaceSegmentation
 
-# Define save_checkpoint function directly in this script
+# Define save_checkpoint function
 def save_checkpoint(model, optimizer, epoch, filename="checkpoint.pth.tar"):
     """Saves model checkpoint."""
     checkpoint = {
@@ -23,7 +23,7 @@ def save_checkpoint(model, optimizer, epoch, filename="checkpoint.pth.tar"):
     torch.save(checkpoint, filename)
     print(f"Checkpoint saved at epoch {epoch}")
 
-# Define HybridLoss directly
+# Define HybridLoss
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -80,8 +80,12 @@ model = HybridFaceSegmentation().to(DEVICE)
 criterion = HybridLoss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 
-# Training Loop
-def train():
+# Training Function (Renamed to train_model)
+def train_model():
+    """Trains the model on the dataset."""
+    if 'train_loader' not in globals():
+        raise ValueError("Dataset not set. Call set_datasets(image_paths, mask_paths) before training.")
+
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0
