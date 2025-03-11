@@ -1,5 +1,4 @@
 import os
-
 import cv2
 import numpy as np
 import albumentations as A
@@ -20,18 +19,29 @@ def load_dataset_paths(dataset_dirs):
     def process_file(filename, img_dir, mask_dir):
         img_path = os.path.join(img_dir, filename)
         mask_path = None
-
         for ext in mask_extensions:
             potential_mask_path = os.path.join(mask_dir, filename.rsplit(".", 1)[0] + ext)
             if os.path.exists(potential_mask_path):
                 mask_path = potential_mask_path
                 break
-
         return img_path, mask_path
 
     for dataset_dir in dataset_dirs:
-        img_dir = os.path.join(dataset_dir, "images")
-        mask_dir = os.path.join(dataset_dir, "masks")
+        # Determine image directory
+        default_img_dir = os.path.join(dataset_dir, "images")
+        if os.path.exists(default_img_dir):
+            img_dir = default_img_dir
+        else:
+            print(f"⚠️ No 'images' subfolder in {dataset_dir}. Using {dataset_dir} directly as image directory.")
+            img_dir = dataset_dir
+
+        # Determine mask directory
+        default_mask_dir = os.path.join(dataset_dir, "masks")
+        if os.path.exists(default_mask_dir):
+            mask_dir = default_mask_dir
+        else:
+            print(f"⚠️ No 'masks' subfolder in {dataset_dir}. Masks might be missing.")
+            mask_dir = dataset_dir
 
         with ThreadPoolExecutor() as executor:
             results = list(executor.map(lambda f: process_file(f, img_dir, mask_dir), os.listdir(img_dir)))
@@ -61,16 +71,21 @@ def map_mask(mask, mapping):
     return np.vectorize(lambda x: mapping.get(x, 0))(mask).astype(np.float32)
 
 def split_dataset(image_paths, mask_paths, test_size=0.1, val_size=0.1):
-    """Stratified split of dataset into train, validation, and test sets, handling missing masks."""
+    """Splits the dataset into train, validation, and test sets.
+       Stratification is removed because mask paths are unique.
+    """
+    # Filter out indices with valid masks
     valid_indices = [i for i, m in enumerate(mask_paths) if m is not None]
     valid_imgs = [image_paths[i] for i in valid_indices]
     valid_masks = [mask_paths[i] for i in valid_indices]
 
+    # Split into train and test sets
     train_img, test_img, train_mask, test_mask = train_test_split(
-        valid_imgs, valid_masks, test_size=test_size, stratify=valid_masks, random_state=42
+        valid_imgs, valid_masks, test_size=test_size, random_state=42
     )
+    # Split the train set further into training and validation sets
     train_img, val_img, train_mask, val_mask = train_test_split(
-        train_img, train_mask, test_size=val_size, stratify=valid_masks[:len(train_mask)], random_state=42
+        train_img, train_mask, test_size=val_size, random_state=42
     )
 
     return (train_img, train_mask), (val_img, val_mask), (test_img, test_mask)
@@ -118,4 +133,5 @@ class FaceSegmentationDataset(Dataset):
             image = image.half()  # Convert image to FP16 for performance optimization
 
         return image, mask
-print("done")
+
+print("Dataset loader refined and optimized!")

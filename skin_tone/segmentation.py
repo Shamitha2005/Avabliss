@@ -15,6 +15,9 @@ class HybridFaceSegmentation(nn.Module):
 
         # Load DeepLabV3+ for segmentation
         self.deeplab = deeplabv3_resnet101(weights=DeepLabV3_ResNet101_Weights.DEFAULT).to(self.device)
+        # Set the segmentation network to eval mode by default,
+        # but for training we want gradients so we'll not wrap the forward in no_grad.
+        # Instead, we will decide what to return based on self.training.
         self.deeplab.eval()
 
         # Load MTCNN for face detection
@@ -30,15 +33,27 @@ class HybridFaceSegmentation(nn.Module):
 
     def optimize_lighting(self, image):
         """Applies lighting correction techniques: Gamma, CLAHE, and white balance."""
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert to RGB
+        # If input is a tensor, convert it to a NumPy array.
+        if isinstance(image, torch.Tensor):
+            image = image.detach().cpu().numpy()
+            if image.ndim == 3:
+                # Convert from C x H x W to H x W x C.
+                image = np.transpose(image, (1, 2, 0))
+            if image.max() <= 1.0:
+                image = (image * 255).astype(np.uint8)
+            else:
+                image = image.astype(np.uint8)
+        
+        # Convert from BGR to RGB.
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # Gamma Correction
+        # Gamma Correction.
         gamma = 1.2
         inv_gamma = 1.0 / gamma
         table = np.array([(i / 255.0) ** inv_gamma * 255 for i in range(256)]).astype("uint8")
         image = cv2.LUT(image, table)
 
-        # Adaptive Histogram Equalization (CLAHE)
+        # Adaptive Histogram Equalization (CLAHE).
         lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
         l, a, b = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
@@ -49,35 +64,47 @@ class HybridFaceSegmentation(nn.Module):
         return image
 
     def forward(self, image):
-        """Segments face using DeepLabV3+ with lighting optimization."""
+        """Segments face using DeepLabV3+ with lighting optimization.
+           During training, returns raw logits for loss computation.
+           During evaluation, applies CRF for refined output.
+        """
+        # Optimize lighting first.
         image = self.optimize_lighting(image)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Ensure RGB consistency
+        # Ensure RGB consistency.
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Preprocess image and prepare tensor.
         img_tensor = self.transform(image_rgb).unsqueeze(0).to(self.device)
-
-        with torch.no_grad():
-            with torch.cuda.amp.autocast():
+        
+        if self.training:
+            # In training mode, return raw logits for computing loss.
+            segmentation_output = self.deeplab(img_tensor)['out']
+            return segmentation_output
+        else:
+            # In evaluation mode, use no_grad and apply CRF post-processing.
+            with torch.no_grad():
                 segmentation_output = self.deeplab(img_tensor)['out']
                 segmentation_mask = torch.argmax(segmentation_output, dim=1).cpu().numpy()[0]
-
-        refined_mask = self.apply_crf(image_rgb, segmentation_mask)
-        return refined_mask
+                refined_mask = self.apply_crf(image_rgb, segmentation_mask)
+            return refined_mask
 
     def apply_crf(self, image, mask):
         """Applies Dense CRF for post-processing refinement."""
         h, w = mask.shape
+        # Resize the input image to match the mask dimensions.
+        image_resized = cv2.resize(image, (w, h))
         d = dcrf.DenseCRF2D(w, h, 2)
 
-        # Normalize mask to [0, 1]
-        mask = mask.astype(np.float32) / 255.0
+        # Normalize mask to [0, 1].
+        mask_norm = mask.astype(np.float32) / 255.0
 
         unary = np.zeros((2, h, w), dtype=np.float32)
-        unary[0] = -np.log(1 - mask + 1e-8)  # Foreground
-        unary[1] = -np.log(mask + 1e-8)      # Background
+        unary[0] = -np.log(1 - mask_norm + 1e-8)  # Foreground.
+        unary[1] = -np.log(mask_norm + 1e-8)      # Background.
         unary = unary.reshape(2, -1)
 
         d.setUnaryEnergy(unary)
         d.addPairwiseGaussian(sxy=3, compat=3)
-        d.addPairwiseBilateral(sxy=30, srgb=20, rgbim=image, compat=10)
+        d.addPairwiseBilateral(sxy=30, srgb=20, rgbim=image_resized, compat=10)
 
         Q = d.inference(5)
         refined_mask = np.argmax(Q, axis=0).reshape(h, w)
