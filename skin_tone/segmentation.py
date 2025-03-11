@@ -105,4 +105,3 @@ class HybridFaceSegmentation:
         Q = d.inference(5)
         refined_mask = np.argmax(Q, axis=0).reshape(h, w)
         return refined_mask
-
