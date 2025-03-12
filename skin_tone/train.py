@@ -72,8 +72,12 @@ train_transform = A.Compose([
 # Function to set dataset paths dynamically
 def set_datasets(image_paths, mask_paths):
     global train_loader
+    if not image_paths or not mask_paths:
+        raise ValueError("Image paths and mask paths must be provided before training.")
+    
     train_dataset = FaceSegmentationDataset(image_paths, mask_paths, transform=train_transform)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+    print(f"Dataset loaded: {len(train_dataset)} samples")
 
 # Model, Loss, Optimizer
 model = HybridFaceSegmentation().to(DEVICE)
@@ -82,6 +86,9 @@ optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 
 # Training Loop
 def train():
+    if 'train_loader' not in globals() or train_loader is None:
+        raise ValueError("Dataset not loaded! Call set_datasets(image_paths, mask_paths) before training.")
+    
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0
