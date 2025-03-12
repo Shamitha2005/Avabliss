@@ -2,10 +2,9 @@ import os
 import torch
 import cv2
 import numpy as np
-from torch.utils.data import DataLoader
-from dataset_loader import FaceSegmentationDataset, load_dataset_paths, split_dataset
-from segmentation import HybridFaceSegmentation  
-from train import train_model  
+from dataset_loader import load_dataset_paths
+from train import train_model, prepare_dataloaders
+from segmentation import HybridFaceSegmentation
 from tone import detect_undertone  
 
 # ⚙ Configuration Settings
@@ -16,35 +15,19 @@ DATASET_DIRS = [
     r"C:\Users\dell\Desktop\Avabliss\data_sets\cfd\CFD Version 3.0\Images\CFD-MR",
     r"C:\Users\dell\Desktop\Avabliss\data_sets\fitzpatrick_images"
 ]
-FITZPATRICK_CSV = r"C:\Users\dell\Desktop\Avabliss\data_sets\fitzpatrick17k.csv"
-
 BATCH_SIZE = 8
 EPOCHS = 20
 LEARNING_RATE = 0.001
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ✅ Validate Dataset Paths
-print("\n🔍 Checking dataset directories:")
-valid_dirs = []
-for dir_path in DATASET_DIRS:
-    if os.path.exists(dir_path):
-        print(f"✅ {dir_path} [FOUND]")
-        valid_dirs.append(dir_path)
-    else:
-        print(f"⚠️ {dir_path} [NOT FOUND]")
-
+print("\n🔍 Checking dataset directories...")
+valid_dirs = [d for d in DATASET_DIRS if os.path.exists(d)]
 if not valid_dirs:
     raise FileNotFoundError("❌ No valid dataset directories found. Please check paths.")
 
-# ✅ Check & Adjust CelebA-HQ Image Directory
-celeba_hq_dir = DATASET_DIRS[0]
-if os.path.exists(celeba_hq_dir):
-    subdirs = os.listdir(celeba_hq_dir)
-    print(f"\n📂 Contents of CelebA-HQ: {subdirs}")
-    if "images" in subdirs:
-        celeba_hq_dir = os.path.join(celeba_hq_dir, "images")
-        print("✅ Using 'images' subdirectory for CelebA-HQ dataset.")
-DATASET_DIRS[0] = celeba_hq_dir  # Update the main directory
+for d in valid_dirs:
+    print(f"✅ {d} [FOUND]")
 
 # ✅ Load Image & Mask Paths
 print("\n📥 Loading dataset paths...")
@@ -52,22 +35,13 @@ image_paths, mask_paths = load_dataset_paths(valid_dirs)
 if not image_paths:
     raise ValueError("❌ No images found in dataset directories.")
 
-# ✅ Split Dataset into Train, Val, Test
-(train_imgs, train_masks), (val_imgs, val_masks), (test_imgs, test_masks) = split_dataset(image_paths, mask_paths)
-
-# ✅ Define Dataset & Dataloaders
-train_dataset = FaceSegmentationDataset(train_imgs, train_masks, transform=None)
-val_dataset = FaceSegmentationDataset(val_imgs, val_masks, transform=None)
-test_dataset = FaceSegmentationDataset(test_imgs, test_masks, transform=None)
-
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
-test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
+# ✅ Prepare Data Loaders (Handles Dataset Splitting)
+train_loader, val_loader, test_loader, test_imgs = prepare_dataloaders(image_paths, mask_paths, BATCH_SIZE)
 
 print(f"\n📊 Dataset Summary:")
-print(f"   🟢 Train: {len(train_dataset)} images")
-print(f"   🔵 Validation: {len(val_dataset)} images")
-print(f"   🟠 Test: {len(test_dataset)} images")
+print(f"   🟢 Train: {len(train_loader.dataset)} images")
+print(f"   🔵 Validation: {len(val_loader.dataset)} images")
+print(f"   🟠 Test: {len(test_loader.dataset)} images")
 
 # ✅ Initialize Model & Optimizer
 print("\n🧠 Initializing Segmentation Model...")
