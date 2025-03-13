@@ -12,7 +12,9 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from dataset_loader import FaceSegmentationDataset
 from segmentation import HybridFaceSegmentation
 
-# Define save_checkpoint function directly in this script
+import torch.nn as nn
+import torch.nn.functional as F
+
 def save_checkpoint(model, optimizer, epoch, filename="checkpoint.pth.tar"):
     """Saves model checkpoint."""
     checkpoint = {
@@ -22,10 +24,6 @@ def save_checkpoint(model, optimizer, epoch, filename="checkpoint.pth.tar"):
     }
     torch.save(checkpoint, filename)
     print(f"Checkpoint saved at epoch {epoch}")
-
-# Define HybridLoss directly
-import torch.nn as nn
-import torch.nn.functional as F
 
 class HybridLoss(nn.Module):
     """Combines Dice Loss, Focal Loss, and Cross-Entropy Loss."""
@@ -61,7 +59,7 @@ scaler = torch.cuda.amp.GradScaler() if USE_AMP else None
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
     A.RandomBrightnessContrast(p=0.2),
-    A.ElasticTransform(alpha=1, sigma=50, p=0.2),  # ✅ Removed alpha_affine
+    A.ElasticTransform(alpha=1, sigma=50, p=0.2),  # Removed alpha_affine
     A.CLAHE(p=0.2),
     A.RandomGamma(p=0.2),
     A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=15, val_shift_limit=10, p=0.3),
@@ -84,36 +82,38 @@ model = HybridFaceSegmentation().to(DEVICE)
 criterion = HybridLoss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 
+<<<<<<< HEAD
 # Training Loop
 def train():
     if 'train_loader' not in globals() or train_loader is None:
         raise ValueError("Dataset not loaded! Call set_datasets(image_paths, mask_paths) before training.")
     
+=======
+# Training Function: Now accepts parameters
+def train_model(model, train_loader, val_loader, criterion, optimizer, epochs, device):
+    """Trains the model on the dataset."""
+>>>>>>> 73fc4f363685c0238103529b2a8f2a5298ee7136
     model.train()
-    for epoch in range(EPOCHS):
+    for epoch in range(epochs):
         epoch_loss = 0
         for images, masks in train_loader:
-            images, masks = images.to(DEVICE), masks.to(DEVICE)
-
+            images, masks = images.to(device), masks.to(device)
             optimizer.zero_grad()
             if USE_AMP:
                 with torch.cuda.amp.autocast():
                     outputs = model(images)
                     loss = criterion(outputs, masks)
-
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 outputs = model(images)
                 loss = criterion(outputs, masks)
-
                 loss.backward()
                 optimizer.step()
             
             epoch_loss += loss.item()
-
-        print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {epoch_loss/len(train_loader)}")
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(train_loader):.4f}")
         save_checkpoint(model, optimizer, epoch)
 
 if __name__ == "__main__":
