@@ -77,6 +77,9 @@ class HybridLoss(nn.Module):
     def forward(self, preds, targets):
         return self.dice_loss(preds, targets) + self.focal_loss(preds, targets) + self.ce_loss(preds, targets)
 
+import torch
+import torch.optim as optim
+
 def save_checkpoint(model, optimizer, epoch, filename="checkpoint.pth.tar"):
     """Saves model checkpoint."""
     checkpoint = {
@@ -87,30 +90,20 @@ def save_checkpoint(model, optimizer, epoch, filename="checkpoint.pth.tar"):
     torch.save(checkpoint, filename)
     print(f"Checkpoint saved at epoch {epoch}")
 
-# Training Function
-def train_model(image_paths, mask_paths):
-    """Trains the segmentation model."""
-    train_loader, val_loader = prepare_dataloaders(image_paths, mask_paths)
-
-    model = HybridFaceSegmentation().to(DEVICE)
-    criterion = HybridLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-
+def train_model(model, train_loader, val_loader, criterion, optimizer, epochs, device):
     model.train()
-    for epoch in range(EPOCHS):
+    for epoch in range(epochs):
         epoch_loss = 0
         for images, masks in train_loader:
-            images, masks = images.to(DEVICE), masks.to(DEVICE)
+            images, masks = images.to(device), masks.to(device)
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, masks)
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
-
-        print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {epoch_loss/len(train_loader):.4f}")
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(train_loader):.4f}")
         save_checkpoint(model, optimizer, epoch)
-
     return model, val_loader
 
 if __name__ == "__main__":

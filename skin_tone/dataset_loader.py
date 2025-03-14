@@ -71,7 +71,6 @@ class FaceSegmentationDataset(Dataset):
         transformed = transform(image=image, mask=mask)
         image = transformed["image"]
         mask = transformed["mask"]
-
         if self.use_fp16:
             image = image.half()
 
